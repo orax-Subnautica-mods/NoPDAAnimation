@@ -57,10 +57,9 @@ public static class Patch_CameraMove
         public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
             /*
-            [PATCH]: br           IL_02b5   // add a jump to IL_02b5
-
             IL_0259: call         bool [UnityEngine.VRModule]UnityEngine.XR.XRSettings::get_enabled()
             IL_025e: brtrue.s     IL_02b5
+            // PATCH HERE
 
             // [249 7 - 249 71]
             IL_0260: ldarg.0      // this
@@ -78,6 +77,10 @@ public static class Patch_CameraMove
             //     localPosition.z = Mathf.Clamp(localPosition.z + (float)((double)PDA.deltaTime * (double)num1 * 0.25), 0.0f + this.camPDAZStart, this.camPDAZOffset + this.camPDAZStart);
             //     this.cameraOffsetTransform.localPosition = localPosition;
             // }
+            //
+            // Patch:
+            // if (!XRSettings.enabled && !Player.main.GetPDA().isInUse)
+            //
             cm.MatchForward(false, // false = move at the start of the match, true = move at the end of the match
                new CodeMatch(OpCodes.Call, AccessTools.Method(typeof(UnityEngine.XR.XRSettings), "get_enabled")),
                new CodeMatch(OpCodes.Brtrue),
@@ -88,9 +91,17 @@ public static class Patch_CameraMove
 
             if (cm.IsValid)
             {
-                CodeInstruction br = new CodeInstruction(OpCodes.Br, cm.InstructionAt(1).operand);
-                br.MoveLabelsFrom(cm.Instruction);
-                cm.Insert(br);
+                cm.Advance(1);
+
+                CodeInstruction[] codeInstructions = new[] {
+                    new CodeInstruction(OpCodes.Ldsfld,AccessTools.Field(typeof(Player), nameof(Player.main))),
+                    new CodeInstruction(OpCodes.Callvirt,AccessTools.Method(typeof(Player),nameof(Player.GetPDA))),
+                    new CodeInstruction(OpCodes.Callvirt,AccessTools.PropertyGetter(typeof(PDA),nameof(PDA.isInUse))),
+                    new CodeInstruction(OpCodes.Brtrue, cm.Instruction.operand) };
+
+                cm.Advance(1);
+
+                cm.Insert(codeInstructions);
             }
             else
             {
